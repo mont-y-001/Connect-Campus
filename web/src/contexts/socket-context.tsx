@@ -7,11 +7,25 @@ import { useAuth } from "./auth-context";
 type SocketContextType = {
   socket: Socket | null;
   connected: boolean;
+  joinConversation: (conversationId: string) => void;
+  sendMessage: (conversationId: string, content: string) => void;
+  startTyping: (conversationId: string) => void;
+  stopTyping: (conversationId: string) => void;
+  onNewMessage: (callback: (data: any) => void) => () => void;
+  onTyping: (callback: (data: any) => void) => () => void;
+  onStoppedTyping: (callback: (data: any) => void) => () => void;
 };
 
 export const SocketContext = createContext<SocketContextType>({
   socket: null,
   connected: false,
+  joinConversation: () => {},
+  sendMessage: () => {},
+  startTyping: () => {},
+  stopTyping: () => {},
+  onNewMessage: () => () => {},
+  onTyping: () => () => {},
+  onStoppedTyping: () => () => {},
 });
 
 export function SocketProvider({ children }: { children: ReactNode }) {
@@ -20,21 +34,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth(); // Assuming auth-context exists
 
   useEffect(() => {
-    // Only connect if user is authenticated and token is available
-    // In a real app, you might fetch a short-lived socket token or send the HTTPOnly cookie implicitly
-    // Since Next.js API routes use HttpOnly cookies, we might not have raw access to the token on the client.
-    // However, the checklist says: "verify JWT from handshake auth token".
-    // We can fetch a token specifically for the socket, or assume we have it. 
-    // Wait, if it's HttpOnly, we can't send it in handshake.auth.token from client side!
-    // But we'll try fetching it or using the session.
-    
     if (!user) return;
 
-    // For now, let's just attempt to connect without a token and see if CORS/cookies allow it,
-    // or assume we get it from a /api/auth/socket-token endpoint if we need to.
-    // Given the prompt: "passes access_token in handshake auth", we might need to expose it.
-    // Assuming we can read it from a cookie or it's provided in user state:
-    
     const socketInstance = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000", {
       withCredentials: true,
     });
@@ -54,11 +55,73 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
+  const joinConversation = (conversationId: string) => {
+    socket?.emit("join_conversation", { conversationId });
+  };
+
+  const sendMessage = (conversationId: string, content: string) => {
+    socket?.emit("send_message", { conversationId, content });
+  };
+
+  const startTyping = (conversationId: string) => {
+    socket?.emit("typing_start", { conversationId });
+  };
+
+  const stopTyping = (conversationId: string) => {
+    socket?.emit("typing_stop", { conversationId });
+  };
+
+  const onNewMessage = (callback: (data: any) => void) => {
+    const handler = (data: any) => callback(data);
+    socket?.on("new_message", handler);
+    return () => {
+      socket?.off("new_message", handler);
+    };
+  };
+
+  const onTyping = (callback: (data: any) => void) => {
+    const handler = (data: any) => callback(data);
+    socket?.on("user_typing", handler);
+    return () => {
+      socket?.off("user_typing", handler);
+    };
+  };
+
+  const onStoppedTyping = (callback: (data: any) => void) => {
+    const handler = (data: any) => callback(data);
+    socket?.on("user_stopped_typing", handler);
+    return () => {
+      socket?.off("user_stopped_typing", handler);
+    };
+  };
+
   return (
-    <SocketContext.Provider value={{ socket, connected }}>
+    <SocketContext.Provider
+      value={{
+        socket,
+        connected,
+        joinConversation,
+        sendMessage,
+        startTyping,
+        stopTyping,
+        onNewMessage,
+        onTyping,
+        onStoppedTyping,
+      }}
+    >
       {children}
     </SocketContext.Provider>
   );
+}
+
+export function useSocket() {
+  const context = useContext(SocketContext);
+
+  if (!context) {
+    throw new Error("useSocket must be used within SocketProvider");
+  }
+
+  return context;
 }
 
 
