@@ -60,7 +60,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     data: { readAt: new Date() },
   });
 
-  const items: MessageItem[] = page.reverse().map((m) => ({
+  const items: MessageItem[] = [...page].reverse().map((m) => ({
     id: m.id,
     content: m.content,
     createdAt: m.createdAt.toISOString(),
