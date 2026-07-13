@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAccessToken } from "@/lib/auth/tokens";
 
 const PROTECTED = ["/feed", "/messages", "/events", "/profile", "/admin"];
 const AUTH_PAGES = ["/login", "/register"];
@@ -7,17 +6,15 @@ const AUTH_PAGES = ["/login", "/register"];
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const token = req.cookies.get("access_token")?.value;
-  
-  // Verify token
-  const isValid = token ? Boolean(verifyAccessToken(token)) : false;
+  const isLoggedIn = Boolean(token);
 
   const isProtected = PROTECTED.some(p => pathname.startsWith(p));
   const isAuthPage  = AUTH_PAGES.some(p => pathname.startsWith(p));
 
-  if (isProtected && !isValid) {
+  if (isProtected && !isLoggedIn) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
-  if (isAuthPage && isValid) {
+  if (isAuthPage && isLoggedIn) {
     return NextResponse.redirect(new URL("/feed", req.url));
   }
   return NextResponse.next();
