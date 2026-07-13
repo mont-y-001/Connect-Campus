@@ -27,7 +27,7 @@ export async function GET() {
   });
 
   const items: ConversationItem[] = await Promise.all(
-    conversations.map(async (conv) => {
+    conversations.map(async (conv: (typeof conversations)[number]) => {
       const other =
         conv.participantAId === user.id
           ? conv.participantB
