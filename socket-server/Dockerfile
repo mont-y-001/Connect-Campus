@@ -21,10 +21,8 @@ ENV PORT=4000
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
-
-# Note: In production, the Prisma Client is required. Ensure that web workspace 
-# node_modules are properly hoisted or accessible, or regenerate Prisma here.
-# Since socket-server relies on the web/node_modules/@prisma/client, it must be included.
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 
 EXPOSE 4000
 

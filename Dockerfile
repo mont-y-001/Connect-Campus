@@ -20,6 +20,7 @@ COPY --from=builder /app/socket-server/package.json ./
 COPY --from=builder /app/socket-server/node_modules ./node_modules
 COPY --from=builder /app/socket-server/dist ./dist
 COPY --from=builder /app/socket-server/prisma ./prisma
+COPY --from=builder /app/socket-server/prisma.config.ts ./prisma.config.ts
 
 EXPOSE 4000
 
