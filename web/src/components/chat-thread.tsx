@@ -5,6 +5,9 @@ import { Send } from "lucide-react";
 import type { MessageItem } from "@/lib/types";
 import { formatTime } from "@/lib/format-time";
 import { useSocket } from "@/contexts/socket-context";
+import { isSocketConfiguredForClient } from "@/lib/socket-url";
+import { authFetch } from "@/lib/auth-fetch";
+import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -23,12 +26,12 @@ export function ChatThread({
   const [messages, setMessages] = useState(initialMessages);
   const [content, setContent] = useState("");
   const [typing, setTyping] = useState(false);
+  const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     joinConversation,
-    sendMessage,
     startTyping,
     stopTyping,
     onNewMessage,
@@ -39,20 +42,38 @@ export function ChatThread({
 
   useEffect(() => {
     joinConversation(conversationId);
-  }, [conversationId, joinConversation]);
+  }, [conversationId, connected, joinConversation]);
 
   useEffect(() => {
-    return onNewMessage((msg) => {
-      if (msg) {
+    if (!connected) return;
+    return onNewMessage((data) => {
+      const incoming = data?.message;
+      if (
+        incoming?.id &&
+        incoming.conversationId === conversationId &&
+        incoming.content &&
+        incoming.createdAt &&
+        incoming.senderHandle
+      ) {
+        const msg: MessageItem = {
+          id: incoming.id,
+          content: incoming.content,
+          createdAt: incoming.createdAt,
+          senderHandle: incoming.senderHandle,
+          isMine: incoming.senderHandle !== otherHandle,
+          readAt: null,
+        };
+
         setMessages((prev) => {
           if (prev.some((m) => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
       }
     });
-  }, [onNewMessage]);
+  }, [conversationId, connected, onNewMessage, otherHandle]);
 
   useEffect(() => {
+    if (!connected) return;
     const unsubTyping = onTyping((data) => {
       if (data.conversationId === conversationId && data.handle === otherHandle) {
         setTyping(true);
@@ -67,11 +88,33 @@ export function ChatThread({
       unsubTyping();
       unsubStopped();
     };
-  }, [conversationId, otherHandle, onTyping, onStoppedTyping]);
+  }, [conversationId, connected, otherHandle, onTyping, onStoppedTyping]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
+
+  // Production fallback when socket server is not configured yet.
+  useEffect(() => {
+    if (connected) return;
+
+    let active = true;
+    async function poll() {
+      const res = await authFetch(
+        `/api/conversations/${conversationId}/messages`
+      );
+      if (!active || !res.ok) return;
+      const data = await res.json();
+      setMessages(data.messages);
+    }
+
+    poll();
+    const interval = setInterval(poll, 5_000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [connected, conversationId]);
 
   function handleInputChange(value: string) {
     setContent(value);
@@ -82,20 +125,54 @@ export function ChatThread({
     }, 2000);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!content.trim()) return;
-    sendMessage(conversationId, content.trim());
+    const text = content.trim();
+    if (!text || sending) return;
+
     setContent("");
     stopTyping(conversationId);
+    setSending(true);
+
+    try {
+      const res = await authFetch(`/api/conversations/${conversationId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: text }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? "Failed to send message");
+      }
+
+      const data = await res.json();
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === data.message.id)) return prev;
+        return [...prev, data.message];
+      });
+    } catch (err) {
+      setContent(text);
+      toast({
+        title: "Message not sent",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
+    <div className="flex flex-col flex-1 min-h-0">
       <div className="border-b px-4 py-3">
         <h2 className="font-semibold">{otherHandle}</h2>
         <p className="text-xs text-muted-foreground">
-          {connected ? "Online" : "Connecting..."}
+          {connected
+            ? "Online"
+            : isSocketConfiguredForClient()
+              ? "Connecting..."
+              : "Messages refresh automatically"}
         </p>
       </div>
 
@@ -131,14 +208,14 @@ export function ChatThread({
         <div ref={bottomRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t p-4 flex gap-2">
+      <form onSubmit={handleSubmit} className="border-t p-4 flex gap-2 shrink-0">
         <Input
           placeholder="Type a message..."
           value={content}
           onChange={(e) => handleInputChange(e.target.value)}
-          disabled={!connected}
+          disabled={sending}
         />
-        <Button type="submit" size="icon" disabled={!content.trim() || !connected}>
+        <Button type="submit" size="icon" disabled={!content.trim() || sending}>
           <Send className="h-4 w-4" />
         </Button>
       </form>

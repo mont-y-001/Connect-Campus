@@ -13,7 +13,10 @@ if (globalForPrisma.prisma) {
   prisma = globalForPrisma.prisma;
 } else {
   const connectionString = process.env.DATABASE_URL;
-  const pool = new Pool({ connectionString });
+  const pool = new Pool({
+    connectionString,
+    connectionTimeoutMillis: 5_000,
+  });
   const adapter = new PrismaPg(pool);
   
   prisma = new PrismaClient({

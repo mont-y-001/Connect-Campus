@@ -18,10 +18,26 @@ app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok' });
 });
 
+function parseCorsOrigins(): string[] {
+  const raw =
+    process.env.CORS_ORIGINS ??
+    process.env.NEXT_PUBLIC_WEB_URL ??
+    'http://localhost:3000';
+  return raw.split(',').map((o) => o.trim()).filter(Boolean);
+}
+
+const corsOrigins = parseCorsOrigins();
+
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: {
-    origin: process.env.NEXT_PUBLIC_WEB_URL || 'http://localhost:3000',
+    origin: (origin, callback) => {
+      if (!origin || corsOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -50,7 +66,7 @@ io.use(async (socket, next) => {
     }
     if (!token) throw new Error('Missing token');
     const payload = await verifySocketToken(token);
-    // Attach user info to socket data for later handlers
+    if (!payload) throw new Error('Invalid token');
     (socket as any).user = payload;
     next();
   } catch (err) {
@@ -63,6 +79,24 @@ io.on('connection', (socket) => {
   console.log('Socket connected', (socket as any).user?.userId);
   chatHandler(io, socket);
   presenceHandler(io, socket);
+});
+
+app.post('/internal/message', (req: Request, res: Response) => {
+  const secret = req.headers['x-internal-secret'];
+  const expected = process.env.INTERNAL_API_SECRET ?? 'dev-internal-secret';
+  if (secret !== expected) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const { conversationId, message } = req.body ?? {};
+  if (!conversationId || !message) {
+    res.status(400).json({ error: 'Invalid payload' });
+    return;
+  }
+
+  io.to(`conv_${conversationId}`).emit('new_message', { message });
+  res.json({ ok: true });
 });
 
 const PORT = process.env.PORT || 4000;

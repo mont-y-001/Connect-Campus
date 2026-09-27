@@ -34,10 +34,10 @@ export default function ChatPage() {
   }, [id]);
 
   return (
-    <>
+    <div className="flex flex-col flex-1 min-h-0">
       <Navbar />
-      <main className="mx-auto max-w-2xl w-full flex-1">
-        <div className="border-b px-4 py-2">
+      <main className="mx-auto flex w-full max-w-2xl flex-1 min-h-0 flex-col">
+        <div className="shrink-0 border-b px-4 py-2">
           <Button variant="ghost" size="sm" asChild>
             <Link href="/messages">
               <ArrowLeft className="h-4 w-4 mr-1" />
@@ -55,6 +55,6 @@ export default function ChatPage() {
           />
         )}
       </main>
-    </>
+    </div>
   );
 }

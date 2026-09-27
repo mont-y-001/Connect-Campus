@@ -1,8 +1,17 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "./auth-context";
+import { getClientSocketUrl } from "@/lib/socket-url";
 
 type SocketContextType = {
   socket: Socket | null;
@@ -31,69 +40,102 @@ export const SocketContext = createContext<SocketContextType>({
 export function SocketProvider({ children }: { children: ReactNode }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
-  const { user } = useAuth(); // Assuming auth-context exists
+  const { user } = useAuth();
+  const userId = user?.id;
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    if (!user) return;
-
-    const socketInstance = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000", {
-      withCredentials: true,
-    });
-
-    socketInstance.on("connect", () => {
-      setConnected(true);
-    });
-
-    socketInstance.on("disconnect", () => {
+    if (!userId) {
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+      setSocket(null);
       setConnected(false);
-    });
+      return;
+    }
 
-    setSocket(socketInstance);
+    let active = true;
+
+    async function connect() {
+      const socketUrl = getClientSocketUrl();
+      if (!socketUrl) {
+        setConnected(false);
+        return;
+      }
+
+      const tokenRes = await fetch("/api/auth/socket-token", {
+        credentials: "include",
+      });
+      if (!active) return;
+
+      if (!tokenRes.ok) {
+        setConnected(false);
+        return;
+      }
+
+      const { token } = await tokenRes.json();
+      const socketInstance = io(socketUrl, {
+        auth: { token },
+        withCredentials: true,
+      });
+
+      socketInstance.on("connect", () => setConnected(true));
+      socketInstance.on("disconnect", () => setConnected(false));
+      socketInstance.on("connect_error", () => setConnected(false));
+
+      socketRef.current = socketInstance;
+      setSocket(socketInstance);
+    }
+
+    connect();
 
     return () => {
-      socketInstance.disconnect();
+      active = false;
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+      setSocket(null);
+      setConnected(false);
     };
-  }, [user]);
+  }, [userId]);
 
-  const joinConversation = (conversationId: string) => {
-    socket?.emit("join_conversation", { conversationId });
-  };
+  const joinConversation = useCallback((conversationId: string) => {
+    socketRef.current?.emit("join_conversation", { conversationId });
+  }, []);
 
-  const sendMessage = (conversationId: string, content: string) => {
-    socket?.emit("send_message", { conversationId, content });
-  };
+  const sendMessage = useCallback((conversationId: string, content: string) => {
+    socketRef.current?.emit("send_message", { conversationId, content });
+  }, []);
 
-  const startTyping = (conversationId: string) => {
-    socket?.emit("typing_start", { conversationId });
-  };
+  const startTyping = useCallback((conversationId: string) => {
+    socketRef.current?.emit("typing_start", { conversationId });
+  }, []);
 
-  const stopTyping = (conversationId: string) => {
-    socket?.emit("typing_stop", { conversationId });
-  };
+  const stopTyping = useCallback((conversationId: string) => {
+    socketRef.current?.emit("typing_stop", { conversationId });
+  }, []);
 
-  const onNewMessage = (callback: (data: any) => void) => {
+  const onNewMessage = useCallback((callback: (data: any) => void) => {
     const handler = (data: any) => callback(data);
-    socket?.on("new_message", handler);
+    socketRef.current?.on("new_message", handler);
     return () => {
-      socket?.off("new_message", handler);
+      socketRef.current?.off("new_message", handler);
     };
-  };
+  }, []);
 
-  const onTyping = (callback: (data: any) => void) => {
+  const onTyping = useCallback((callback: (data: any) => void) => {
     const handler = (data: any) => callback(data);
-    socket?.on("user_typing", handler);
+    socketRef.current?.on("user_typing", handler);
     return () => {
-      socket?.off("user_typing", handler);
+      socketRef.current?.off("user_typing", handler);
     };
-  };
+  }, []);
 
-  const onStoppedTyping = (callback: (data: any) => void) => {
+  const onStoppedTyping = useCallback((callback: (data: any) => void) => {
     const handler = (data: any) => callback(data);
-    socket?.on("user_stopped_typing", handler);
+    socketRef.current?.on("user_stopped_typing", handler);
     return () => {
-      socket?.off("user_stopped_typing", handler);
+      socketRef.current?.off("user_stopped_typing", handler);
     };
-  };
+  }, []);
 
   return (
     <SocketContext.Provider
@@ -123,5 +165,3 @@ export function useSocket() {
 
   return context;
 }
-
-

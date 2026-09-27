@@ -24,15 +24,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    const authFetch = (input: RequestInfo, init?: RequestInit) =>
+      fetch(input, { ...init, signal: AbortSignal.timeout(10_000) });
+
     try {
-      let res = await fetch("/api/auth/me", { credentials: "include" });
+      let res = await authFetch("/api/auth/me", { credentials: "include" });
       if (res.status === 401) {
-        const refreshRes = await fetch("/api/auth/refresh", {
+        const refreshRes = await authFetch("/api/auth/refresh", {
           method: "POST",
           credentials: "include",
         });
         if (refreshRes.ok) {
-          res = await fetch("/api/auth/me", { credentials: "include" });
+          res = await authFetch("/api/auth/me", { credentials: "include" });
         }
       }
       if (res.ok) {

@@ -12,7 +12,7 @@ model User {
   passwordHash   String
   handle         String         @unique
   college        String?
-  role           Role           @default(USER)
+  role           Role           @default(USER)   //MODERATOR(community me revie rport,remove) & admin
   isBanned       Boolean        @default(false)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
