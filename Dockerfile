@@ -6,6 +6,7 @@ COPY socket-server/package.json socket-server/package-lock.json* ./
 RUN npm ci
 
 COPY socket-server/ ./
+ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 RUN npx prisma generate
 RUN npm run build
 
