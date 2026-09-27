@@ -7,8 +7,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc",
-    "prisma:generate": "prisma generate --schema=../web/prisma/schema.prisma",
-    "prisma:setup": "cd ../web && npx prisma generate && cp -R node_modules/@prisma/client ./node_modules/@prisma"
+    "prisma:generate": "prisma generate",
+    "prebuild": "prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

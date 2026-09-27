@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
-import { PrismaClient } from '../../../web/node_modules/@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 

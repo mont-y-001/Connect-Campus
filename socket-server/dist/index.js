@@ -19,10 +19,23 @@ app.use(express_1.default.json());
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
 });
+function parseCorsOrigins() {
+    const raw = process.env.CORS_ORIGINS ??
+        process.env.NEXT_PUBLIC_WEB_URL ??
+        'http://localhost:3000';
+    return raw.split(',').map((o) => o.trim()).filter(Boolean);
+}
+const corsOrigins = parseCorsOrigins();
 const server = http_1.default.createServer(app);
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: process.env.NEXT_PUBLIC_WEB_URL || 'http://localhost:3000',
+        origin: (origin, callback) => {
+            if (!origin || corsOrigins.includes(origin)) {
+                callback(null, true);
+                return;
+            }
+            callback(new Error(`CORS blocked for origin: ${origin}`));
+        },
         methods: ['GET', 'POST'],
         credentials: true,
     },
@@ -50,7 +63,8 @@ io.use(async (socket, next) => {
         if (!token)
             throw new Error('Missing token');
         const payload = await (0, auth_1.verifySocketToken)(token);
-        // Attach user info to socket data for later handlers
+        if (!payload)
+            throw new Error('Invalid token');
         socket.user = payload;
         next();
     }
@@ -63,6 +77,21 @@ io.on('connection', (socket) => {
     console.log('Socket connected', socket.user?.userId);
     (0, chat_1.default)(io, socket);
     (0, presenceHandler_1.default)(io, socket);
+});
+app.post('/internal/message', (req, res) => {
+    const secret = req.headers['x-internal-secret'];
+    const expected = process.env.INTERNAL_API_SECRET ?? 'dev-internal-secret';
+    if (secret !== expected) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+    }
+    const { conversationId, message } = req.body ?? {};
+    if (!conversationId || !message) {
+        res.status(400).json({ error: 'Invalid payload' });
+        return;
+    }
+    io.to(`conv_${conversationId}`).emit('new_message', { message });
+    res.json({ ok: true });
 });
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {

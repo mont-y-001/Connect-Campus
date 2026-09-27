@@ -22,6 +22,18 @@ function chatHandler(io, socket) {
     // Send a message
     socket.on("send_message", async (data) => {
         const { conversationId, content } = data;
+        if (!content?.trim())
+            return;
+        const conversation = await prisma_1.prisma.conversation.findUnique({
+            where: { id: conversationId },
+            select: { participantAId: true, participantBId: true },
+        });
+        if (!conversation ||
+            (conversation.participantAId !== user.userId &&
+                conversation.participantBId !== user.userId)) {
+            socket.emit("error", { message: "Unauthorized to send in this conversation" });
+            return;
+        }
         // Persist message
         const message = await prisma_1.prisma.message.create({
             data: {
@@ -41,12 +53,9 @@ function chatHandler(io, socket) {
                 conversationId,
             },
         });
-        // Create notification for the other participant
-        const conv = await prisma_1.prisma.conversation.findUnique({
-            where: { id: conversationId },
-            select: { participantAId: true, participantBId: true },
-        });
-        const recipientId = conv?.participantAId === user.userId ? conv?.participantBId : conv?.participantAId;
+        const recipientId = conversation.participantAId === user.userId
+            ? conversation.participantBId
+            : conversation.participantAId;
         if (recipientId) {
             await prisma_1.prisma.notification.create({
                 data: {
